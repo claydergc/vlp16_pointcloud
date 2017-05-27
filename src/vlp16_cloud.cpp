@@ -26,22 +26,30 @@ using namespace pcl;
 //catkin_make -DCMAKE_BUILD_TYPE=Release
 
 template <typename PointT>
-void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::PointCloud<PointT>& finalCloud, unsigned int rings)
+void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::PointCloud<PointT>& cloud1D, pcl::PointCloud<PointT>& cloud2D, unsigned int rings)
 {
-	pcl::PointCloud<PointT>* cloudPerLaser = new pcl::PointCloud<PointT>[rings];
-	uint8_t* cloud_data[rings];
+  cloud1D.header   = msg.header;
+  cloud1D.width    = msg.width;
+  cloud1D.height   = msg.height;
+  cloud1D.is_dense = msg.is_dense == 1;
+  uint32_t num_points = msg.width * msg.height;
+  cloud1D.points.resize (num_points);
+  uint8_t* cloud_data1 = reinterpret_cast<uint8_t*>(&cloud1D.points[0]);
+  
+  pcl::PointCloud<PointT>* cloudPerLaser = new pcl::PointCloud<PointT>[rings];
+  uint8_t* cloud_data2[rings];
+
 	unsigned int pointsCounter[rings] = {0};
 
-	for(unsigned int i=0; i<rings; i++)
+	for(unsigned int i=0; i<rings; ++i)
 	{
 		cloudPerLaser[i] = pcl::PointCloud<PointT>();
 		cloudPerLaser[i].header   = msg.header;
     cloudPerLaser[i].width    = msg.width;
     cloudPerLaser[i].height   = msg.height;
     cloudPerLaser[i].is_dense = msg.is_dense == 1;
-    uint32_t num_points = msg.width * msg.height;
     cloudPerLaser[i].points.resize (num_points);
-		cloud_data[i] = reinterpret_cast<uint8_t*>(&cloudPerLaser[i].points[0]);
+		cloud_data2[i] = reinterpret_cast<uint8_t*>(&cloudPerLaser[i].points[0]);
 	}
 
 	for (uint32_t row = 0; row < msg.height; ++row)
@@ -57,15 +65,17 @@ void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::Poin
 	  	  //float* z = (float*)(msg_data + 8);
 	  	  //float* i = (float*)(msg_data + 16);
 	  	  uint16_t* ring = (uint16_t*)(msg_data+20);
-	     	memcpy (cloud_data[*ring], msg_data, 22);
+	     	memcpy (cloud_data2[*ring], msg_data, 22);
+        memcpy (cloud_data1, msg_data, 22);
         pointsCounter[*ring]++;
-	      cloud_data[*ring] += sizeof (PointT);
+        cloud_data1 += sizeof (PointT);
+	      cloud_data2[*ring] += sizeof (PointT);
 	  }
 	}
 
 	unsigned int maxLength = 0;
 
-	for(unsigned int i=0; i<rings; i++)
+	for(unsigned int i=0; i<rings; ++i)
 	{
     	cloudPerLaser[i].width = pointsCounter[i];
       cloudPerLaser[i].height = 1;
@@ -75,15 +85,15 @@ void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::Poin
         maxLength = pointsCounter[i];
   }
   
-  finalCloud.header   = msg.header;
-  finalCloud.width    = maxLength;
-  finalCloud.height   = rings;
-  finalCloud.is_dense = msg.is_dense == 1;
-  finalCloud.points.resize (maxLength*rings);
+  cloud2D.header   = msg.header;
+  cloud2D.width    = maxLength;
+  cloud2D.height   = rings;
+  cloud2D.is_dense = msg.is_dense == 1;
+  cloud2D.points.resize (maxLength*rings);
 
   for (size_t row = 0; row < rings; ++row)
 		for (size_t col = 0; col < maxLength; ++col)
-			finalCloud(col, row) = cloudPerLaser[row].points[col%(cloudPerLaser[row].points.size())];
+			cloud2D(col, row) = cloudPerLaser[row].points[col%(cloudPerLaser[row].points.size())];
 }
 
 void cloud_callback (const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
@@ -114,12 +124,14 @@ void cloud_callback (const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 	cout<<"-------"<<cloud_msg->fields[4].datatype<<endl;
 	cout<<"-------"<<cloud_msg->fields[4].count<<endl;*/
 
-	pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::PointCloud<pcl::PointXYZI>::Ptr cloud1D(new pcl::PointCloud<pcl::PointXYZI>);
+	pcl::PointCloud<pcl::PointXYZI>::Ptr cloud2D(new pcl::PointCloud<pcl::PointXYZI>);
 	pcl::PCLPointCloud2 pcl_pc2;
   pcl_conversions::toPCL(*cloud_msg, pcl_pc2);
-  fromPCLPointCloud2ToVelodyneCloud (pcl_pc2, *cloud, 16);
+  fromPCLPointCloud2ToVelodyneCloud (pcl_pc2, *cloud1D, *cloud2D, 16);
   pcl::PCDWriter writer;
-  writer.write<pcl::PointXYZI> ("cloud.pcd", *cloud, false);
+  writer.write<pcl::PointXYZI> ("cloud1D.pcd", *cloud1D, false);
+  writer.write<pcl::PointXYZI> ("cloud2D.pcd", *cloud2D, false);
 }
 
 int main (int argc, char** argv)
