@@ -26,7 +26,7 @@ using namespace pcl;
 //catkin_make -DCMAKE_BUILD_TYPE=Release
 
 template <typename PointT>
-void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::PointCloud<PointT>& cloud1D, pcl::PointCloud<PointT>& cloud2D, unsigned int rings)
+void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::PointCloud<PointT>& cloud1D, std::vector< pcl::PointCloud<PointT> >& cloudVector, unsigned int rings)
 {
   cloud1D.header   = msg.header;
   cloud1D.width    = msg.width;
@@ -73,27 +73,15 @@ void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::Poin
 	  }
 	}
 
-	unsigned int maxLength = 0;
+  cloudVector = std::vector< pcl::PointCloud<PointT> >(rings);
 
 	for(unsigned int i=0; i<rings; ++i)
 	{
     	cloudPerLaser[i].width = pointsCounter[i];
       cloudPerLaser[i].height = 1;
       cloudPerLaser[i].points.resize (pointsCounter[i]);
-
-      if(pointsCounter[i]>maxLength)
-        maxLength = pointsCounter[i];
+      cloudVector[i] = (cloudPerLaser[i]);
   }
-  
-  cloud2D.header   = msg.header;
-  cloud2D.width    = maxLength;
-  cloud2D.height   = rings;
-  cloud2D.is_dense = msg.is_dense == 1;
-  cloud2D.points.resize (maxLength*rings);
-
-  for (size_t row = 0; row < rings; ++row)
-		for (size_t col = 0; col < maxLength; ++col)
-			cloud2D(col, row) = cloudPerLaser[row].points[col%(cloudPerLaser[row].points.size())];
 }
 
 void cloud_callback (const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
@@ -125,13 +113,19 @@ void cloud_callback (const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
 	cout<<"-------"<<cloud_msg->fields[4].count<<endl;*/
 
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud1D(new pcl::PointCloud<pcl::PointXYZI>);
-	pcl::PointCloud<pcl::PointXYZI>::Ptr cloud2D(new pcl::PointCloud<pcl::PointXYZI>);
+	vector< pcl::PointCloud<pcl::PointXYZI> > cloudVector;
 	pcl::PCLPointCloud2 pcl_pc2;
   pcl_conversions::toPCL(*cloud_msg, pcl_pc2);
-  fromPCLPointCloud2ToVelodyneCloud (pcl_pc2, *cloud1D, *cloud2D, 16);
+  fromPCLPointCloud2ToVelodyneCloud (pcl_pc2, *cloud1D, cloudVector, 16);
   pcl::PCDWriter writer;
   writer.write<pcl::PointXYZI> ("cloud1D.pcd", *cloud1D, false);
-  writer.write<pcl::PointXYZI> ("cloud2D.pcd", *cloud2D, false);
+
+  for(int i=0; i<16; ++i)
+  {
+    stringstream ss;
+    ss<<"velodyne_rings/ring"<<i<<".pcd";
+    writer.write<pcl::PointXYZI> (ss.str(), cloudVector[i], false);
+  }
 }
 
 int main (int argc, char** argv)
