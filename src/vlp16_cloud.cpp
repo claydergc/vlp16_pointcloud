@@ -82,6 +82,8 @@ void fromPCLPointCloud2ToVelodyneCloud(const pcl::PCLPointCloud2& msg, pcl::Poin
       cloudPerLaser[i].points.resize (pointsCounter[i]);
       cloudVector[i] = (cloudPerLaser[i]);
   }
+
+  delete[] cloudPerLaser;
 }
 
 void cloud_callback (const sensor_msgs::PointCloud2ConstPtr& cloud_msg)
